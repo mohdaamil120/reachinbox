@@ -7,7 +7,7 @@ const GoogleStrategy = require("passport-google-oauth").OAuth2Strategy
 const axios = require('axios'); // For making HTTP requests
 const { ClientSecretCredential } = require('@azure/identity');
 const { GraphClient } = require('@microsoft/microsoft-graph-client');
-const { Queue } = require('bullmq');
+const  Queue  = require('bull');
 
 dotenv.config();
 
@@ -19,23 +19,30 @@ app.use(session({
   saveUninitialized: true
 }));
 
+
 const queue = new Queue('email-processing');
 
-passport.use(new GoogleStrategy({
-  clientId: process.env.GOOGLE_CLIENT_ID,
-  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  redirectUri: "http://localhost:3000/auth/google/callback",
-},
-function (accessToken,refreshToken,profile,done){
-  console.log(profile)
-  return done(null, profile)
-}
-))
+// passport.use(new GoogleStrategy({
+//   clientId: "451279009887-p4i8n6s0ead6uspl06cl45h2cmb1oon6.apps.googleusercontent.com",
+//   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+//   redirectUri: "http://localhost:3000/auth/google/callback",
+// },
+// function (accessToken,refreshToken,profile,done){
+//   console.log(profile)
+//   return done(null, profile)
+// }
+// ))
 
+const googleOAuth2Client = new google.auth.OAuth2(
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET,
+  "http://localhost:3000/auth/google/callback"
+);
 
 passport.serializeUser(function(user,done){
   done(null, user)
 })
+
 
 
 passport.deserializeUser(function(user,done){
@@ -90,10 +97,11 @@ app.get('/auth/outlook/callback', async (req, res) => {
 });
 
 
+
 app.get('/emails', async (req, res) => {
   try {
     const googleAuth = new google.auth.OAuth2({
-      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientId: "451279009887-p4i8n6s0ead6uspl06cl45h2cmb1oon6.apps.googleusercontent.com",
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       redirectUri:"http://localhost:3000/auth/google/callback",
       credentials: req.session.googleTokens
@@ -145,6 +153,7 @@ app.get('/emails', async (req, res) => {
 });
 
 
+
 queue.process('process-emails', async (job) => {
   const { emails, analyzedContext } = job.data;
 
@@ -193,7 +202,7 @@ async function sendAutomatedReplies(categorizedEmails) {
 async function sendEmail(sender, recipient, subject, body) {
   try {
     const gmailAuth = new google.auth.OAuth2({
-      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientId: "451279009887-p4i8n6s0ead6uspl06cl45h2cmb1oon6.apps.googleusercontent.com",
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       redirectUri: "http://localhost:3000/auth/google/callback",
       credentials: req.session.googleTokens
@@ -228,7 +237,7 @@ app.post('/automated-replies', async (req, res) => {
     const automatedReply = "Thank you for your email. Our team will get back to you shortly.";
 
     const googleAuth = new google.auth.OAuth2({
-      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientId: "451279009887-p4i8n6s0ead6uspl06cl45h2cmb1oon6.apps.googleusercontent.com",
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       redirectUri: "http://localhost:3000/auth/google/callback",
       credentials: req.session.googleTokens
