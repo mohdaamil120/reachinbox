@@ -22,22 +22,25 @@ app.use(session({
 
 const queue = new Queue('email-processing');
 
-// passport.use(new GoogleStrategy({
-//   clientId: "451279009887-p4i8n6s0ead6uspl06cl45h2cmb1oon6.apps.googleusercontent.com",
-//   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-//   redirectUri: "http://localhost:3000/auth/google/callback",
-// },
-// function (accessToken,refreshToken,profile,done){
-//   console.log(profile)
-//   return done(null, profile)
-// }
-// ))
 
-const googleOAuth2Client = new google.auth.OAuth2(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-  "http://localhost:3000/auth/google/callback"
-);
+passport.use(new GoogleStrategy({
+  clientID: process.env.GOOGLE_CLIENT_ID,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  callbackURL: "http://localhost:3000/auth/google/callback"
+},
+function(accessToken, refreshToken, profile, done) {
+  console.log(profile)
+  return done(null, profile)
+}
+));
+
+
+
+// const googleOAuth2Client = new google.auth.OAuth2(
+//   process.env.GOOGLE_CLIENT_ID,
+//   process.env.GOOGLE_CLIENT_SECRET,
+//   "http://localhost:3000/auth/google/callback"
+// );
 
 passport.serializeUser(function(user,done){
   done(null, user)
