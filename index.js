@@ -24,7 +24,7 @@ const queue = new Queue('email-processing');
 passport.use(new GoogleStrategy({
   clientId: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  redirectUri: process.env.GOOGLE_REDIRECT_URI,
+  redirectUri: "http://localhost:3000/auth/google/callback",
 },
 function (accessToken,refreshToken,profile,done){
   console.log(profile)
@@ -95,7 +95,7 @@ app.get('/emails', async (req, res) => {
     const googleAuth = new google.auth.OAuth2({
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      redirectUri: process.env.GOOGLE_REDIRECT_URI,
+      redirectUri:"http://localhost:3000/auth/google/callback",
       credentials: req.session.googleTokens
     });
     const gmail = google.gmail({ version: 'v1', auth: googleAuth });
@@ -195,7 +195,7 @@ async function sendEmail(sender, recipient, subject, body) {
     const gmailAuth = new google.auth.OAuth2({
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      redirectUri: process.env.GOOGLE_REDIRECT_URI,
+      redirectUri: "http://localhost:3000/auth/google/callback",
       credentials: req.session.googleTokens
     });
     const gmail = google.gmail({ version: 'v1', auth: gmailAuth });
@@ -230,7 +230,7 @@ app.post('/automated-replies', async (req, res) => {
     const googleAuth = new google.auth.OAuth2({
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      redirectUri: process.env.GOOGLE_REDIRECT_URI,
+      redirectUri: "http://localhost:3000/auth/google/callback",
       credentials: req.session.googleTokens
     });
     const gmail = google.gmail({ version: 'v1', auth: googleAuth });
