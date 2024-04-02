@@ -4,8 +4,9 @@ const session = require('express-session');
 const dotenv = require('dotenv');
 const passport = require("passport")
 const GoogleStrategy = require("passport-google-oauth").OAuth2Strategy
-const axios = require('axios'); // For making HTTP requests
+const axios = require('axios'); 
 const { ClientSecretCredential } = require('@azure/identity');
+// const { ClientSecretCredential, DeviceCodeCredential } = require('@azure/identity');
 const { GraphClient } = require('@microsoft/microsoft-graph-client');
 const  Queue  = require('bull');
 
@@ -20,19 +21,30 @@ app.use(session({
 }));
 
 
+
 const queue = new Queue('email-processing');
 
 
 passport.use(new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  callbackURL: "http://localhost:3000/auth/google/callback"
+  callbackURL: "http://localhost:3000/auth/google/callback",
 },
 function(accessToken, refreshToken, profile, done) {
-  console.log(profile)
-  return done(null, profile)
+  // Set tokens in session
+  const user = {
+    profile: profile,
+    tokens: {
+      accessToken: accessToken,
+      refreshToken: refreshToken
+    }
+  };
+  return done(null, user);
+
 }
 ));
+
+
 
 
 
@@ -47,7 +59,6 @@ passport.serializeUser(function(user,done){
 })
 
 
-
 passport.deserializeUser(function(user,done){
   done(null, user)
 })
@@ -60,7 +71,7 @@ app.get("/" ,(req,res) =>{
 })
 
 app.get("/auth/google", 
-  passport.authenticate("google", {scope : ["profile" ]})
+  passport.authenticate("google", {scope : ["profile" ,"email"], accessType: 'offline'})
 
 );
 
@@ -69,7 +80,17 @@ app.get("/auth/google",
 app.get("/auth/google/callback" ,
   passport.authenticate("google", {failureRedirect: "/login" }),
   function(req,res){
-    res.redirect("/")
+
+    const accessToken = req.user.tokens.accessToken;
+    const refreshToken = req.user.tokens.refreshToken;
+
+    req.session.googleTokens = {
+      accessToken: accessToken,
+      refreshToken: refreshToken
+    };
+
+    res.redirect("/emails");
+    
   }
 )
 
@@ -85,12 +106,26 @@ const outlookCredential = new ClientSecretCredential(
 
 const openAIKey = process.env.OPENAI_API_KEY;
 
+
+app.get('/auth/outlook', async (req, res) => {
+  try {
+    const authorizationUrl = await outlookCredential.getAuthorizationCodeUrl({
+      redirectUri: 'http://localhost:3000/auth/outlook/callback',
+      scopes: ['openid', 'profile', 'offline_access', 'https://outlook.office.com/mail.read']
+    });
+    res.redirect(authorizationUrl);
+  } catch (error) {
+    console.error('Error initiating Outlook authentication:', error.message);
+    res.status(500).send('Error initiating Outlook authentication.');
+  }
+});
+
 app.get('/auth/outlook/callback', async (req, res) => {
   const { code } = req.query;
 
   try {
-    const tokenResponse = await outlookCredential.getToken('https://graph.microsoft.com/.default');
-    const accessToken = tokenResponse.token;
+    const tokenResponse = await outlookCredential.getToken('https://outlook.office.com/mail.read', code);
+    const accessToken = tokenResponse.token.accessToken;
     req.session.outlookAccessToken = accessToken;
     res.send('Outlook Authentication successful. You can now access Outlook.');
   } catch (error) {
@@ -103,14 +138,20 @@ app.get('/auth/outlook/callback', async (req, res) => {
 
 app.get('/emails', async (req, res) => {
   try {
-    const googleAuth = new google.auth.OAuth2({
+    const gmailAuth = new google.auth.OAuth2({
       clientId: "451279009887-p4i8n6s0ead6uspl06cl45h2cmb1oon6.apps.googleusercontent.com",
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       redirectUri:"http://localhost:3000/auth/google/callback",
-      credentials: req.session.googleTokens
     });
-    const gmail = google.gmail({ version: 'v1', auth: googleAuth });
-    const googleResponse = await gmail.users.messages.list({ userId: 'me', maxResults: 10 });
+
+      if (req.session.googleTokens) {
+        gmailAuth.setCredentials(req.session.googleTokens);
+      } else {
+        return res.redirect('/auth/google');
+      }
+    console.log('gmailAuth credentials:', gmailAuth.credentials);
+    const gmail = google.gmail({ version: 'v1', auth: gmailAuth });
+    const googleResponse = await gmail.users.messages.list({ userId: 'me', q:"is:unread" });
     const googleEmails = googleResponse.data;
 
     const outlookClient = GraphClient.initWithMiddleware({
@@ -146,7 +187,7 @@ app.get('/emails', async (req, res) => {
     res.json({ emails: emails, analyzedContext: analyzedContext });
   
     await queue.add('process-emails', { emails, analyzedContext });
-    
+    console.log("googleEmails : "+ googleEmails)
     res.send('Emails added to the processing queue.');
 
   } catch (error) {
@@ -154,8 +195,6 @@ app.get('/emails', async (req, res) => {
     res.status(500).send('Error fetching and analyzing emails.');
   }
 });
-
-
 
 queue.process('process-emails', async (job) => {
   const { emails, analyzedContext } = job.data;
@@ -235,17 +274,18 @@ async function sendEmail(sender, recipient, subject, body) {
 
 
 
+
 app.post('/automated-replies', async (req, res) => {
   try {
     const automatedReply = "Thank you for your email. Our team will get back to you shortly.";
 
-    const googleAuth = new google.auth.OAuth2({
+    const gmailAuth = new google.auth.OAuth2({
       clientId: "451279009887-p4i8n6s0ead6uspl06cl45h2cmb1oon6.apps.googleusercontent.com",
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       redirectUri: "http://localhost:3000/auth/google/callback",
       credentials: req.session.googleTokens
     });
-    const gmail = google.gmail({ version: 'v1', auth: googleAuth });
+    const gmail = google.gmail({ version: 'v1', auth: gmailAuth });
     const message = `From: ${req.body.sender}\r\nTo: ${req.body.recipient}\r\nSubject: ${req.body.subject}\r\n\r\n${automatedReply}`;
     const encodedMessage = Buffer.from(message).toString('base64');
     const emailToSend = await gmail.users.messages.send({
@@ -261,6 +301,7 @@ app.post('/automated-replies', async (req, res) => {
     res.status(500).send('Error generating automated reply.');
   }
 });
+
 
 
 const PORT = process.env.PORT || 3000;
